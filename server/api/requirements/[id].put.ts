@@ -1,7 +1,7 @@
 import { query } from '~/server/utils/mysql';
 import { authorize } from '~/server/utils/permissions';
 import { mergeStoredAttachments, splitStoredAttachments } from '~/server/utils/requirementAttachments';
-import { completeAssociatedTasks } from '~/server/utils/requirementStatus';
+import { assertRequirementTasksCompleted } from '~/server/utils/requirementStatus';
 import { notifyRequirementAssigned } from '~/server/utils/notifications';
 import { collectRequirementChanges, insertRequirementHistoryEntries } from '~/server/utils/requirementHistory';
 
@@ -60,6 +60,11 @@ export default defineEventHandler(async (event) => {
           links === undefined ? currentStored.links : links
         ));
 
+    const nextStatus = valueOrExisting(status, old.status)
+    if (nextStatus === 'completed' && old.status !== 'completed') {
+      await assertRequirementTasksCompleted(reqId)
+    }
+
     await query(
       `UPDATE requirements
        SET title = ?, description = ?, priority = ?, status = ?, type = ?,
@@ -72,11 +77,6 @@ export default defineEventHandler(async (event) => {
        valueOrExisting(iteration_id, old.iteration_id), valueOrExisting(assignee_id, old.assignee_id),
        valueOrExisting(module, old.module), persistedTags, persistedAttachments, formattedDate, reqId]
     );
-
-    const nextStatus = valueOrExisting(status, old.status)
-    if (nextStatus === 'completed' && old.status !== 'completed') {
-      await completeAssociatedTasks([reqId])
-    }
 
     const historyEntries = await collectRequirementChanges(old, body);
     await insertRequirementHistoryEntries(reqId, historyEntries, currentUser.id);

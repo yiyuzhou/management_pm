@@ -20,11 +20,22 @@
           </div>
         </div>
         <div class="flex items-center gap-3">
-          <button v-if="can('create', 'bug')" class="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors shadow-sm" @click="showBugModal = true">
+          <button
+            v-if="can('update', 'requirement') && requirement && requirement.status !== 'completed' && requirement.status !== 'closed'"
+            class="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-medium transition-colors shadow-sm disabled:opacity-50"
+            :disabled="completeReqSubmitting"
+            @click="completeRequirement"
+          >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
             </svg>
-            提交Bug
+            {{ completeReqSubmitting ? '完成中...' : '已完成' }}
+          </button>
+          <button v-if="can('delete', 'requirement')" class="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors shadow-sm" @click="openDeleteRequirement">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+            删除
           </button>
           <button v-if="can('update', 'requirement')" class="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition-colors shadow-sm" @click="editRequirement">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -168,11 +179,12 @@
                         <th class="px-4 py-3 text-left text-gray-500 font-medium w-[96px]">状态</th>
                         <th class="px-4 py-3 text-left text-gray-500 font-medium w-[120px]">截止时间</th>
                         <th class="px-4 py-3 text-left text-gray-500 font-medium w-[72px]">工时</th>
+                        <th class="px-4 py-3 text-left text-gray-500 font-medium w-[100px]">操作</th>
                       </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
                       <template v-for="task in tasks" :key="task.id">
-                        <tr class="hover:bg-gray-50 cursor-pointer" @click="toggleExpandedTask(task.id)">
+                        <tr :id="`req-task-${task.id}`" class="hover:bg-gray-50 cursor-pointer" @click="toggleExpandedTask(task.id)">
                           <td class="px-4 py-3 text-gray-800">
                             <div class="flex items-center gap-2">
                               <svg class="w-4 h-4 text-gray-400 flex-shrink-0 transition-transform" :class="{ 'rotate-90': expandedTaskId === task.id }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -208,9 +220,27 @@
                           </td>
                           <td class="px-4 py-3 text-gray-600 whitespace-nowrap">{{ task.due_date ? formatDateTime(task.due_date) : '—' }}</td>
                           <td class="px-4 py-3 text-gray-600 whitespace-nowrap">{{ task.estimated_hours || task.estimated_hours === 0 ? `${task.estimated_hours}h` : '—' }}</td>
+                          <td class="px-4 py-3" @click.stop>
+                            <div class="flex items-center gap-2">
+                              <button
+                                v-if="canMaybeOwn('update', 'task')"
+                                class="text-xs text-blue-500 hover:text-blue-600"
+                                @click="openEditTask(task)"
+                              >
+                                编辑
+                              </button>
+                              <button
+                                v-if="can('delete', 'task')"
+                                class="text-xs text-red-500 hover:text-red-600"
+                                @click="openDeleteTask(task)"
+                              >
+                                删除
+                              </button>
+                            </div>
+                          </td>
                         </tr>
                         <tr v-if="expandedTaskId === task.id">
-                          <td colspan="6" class="px-4 py-3 bg-gray-50/80">
+                          <td colspan="7" class="px-4 py-3 bg-gray-50/80">
                             <div class="text-xs text-gray-400 mb-1">任务描述</div>
                             <p class="text-sm text-gray-700 whitespace-pre-wrap leading-6">{{ task.description || '暂无描述' }}</p>
                           </td>
@@ -226,19 +256,46 @@
 
               <!-- 关联 Bug -->
               <div class="bg-white rounded-xl p-5 border border-gray-100">
-                <h3 class="font-semibold text-gray-800 mb-3">关联 Bug</h3>
+                <div class="flex items-center justify-between mb-3">
+                  <div class="flex items-center gap-2">
+                    <h3 class="font-semibold text-gray-800">关联 Bug</h3>
+                    <span class="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-xs">{{ requirement.bugs?.length || 0 }}</span>
+                  </div>
+                  <button
+                    v-if="can('update', 'requirement')"
+                    class="flex items-center gap-1 px-3 py-1.5 text-blue-600 hover:bg-blue-50 rounded-lg text-sm font-medium transition-colors"
+                    @click="openBugPicker"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    关联 Bug
+                  </button>
+                </div>
                 <div v-if="requirement.bugs && requirement.bugs.length > 0" class="space-y-2">
                   <div
                     v-for="bug in requirement.bugs"
                     :key="bug.id"
-                    class="flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors"
+                    class="flex items-center justify-between p-3 bg-gray-50 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors group"
                     @click="navigateTo({ path: `/bugs/${bug.id}`, query: { from: `/requirements/${requirementId}` } })"
                   >
-                    <div class="flex items-center gap-3">
-                      <span class="text-sm text-gray-400 font-mono">{{ bug.bug_no || bug.id }}</span>
-                      <span class="text-sm text-gray-700">{{ bug.title }}</span>
+                    <div class="flex items-center gap-3 min-w-0">
+                      <span class="text-sm text-gray-400 font-mono flex-shrink-0">{{ bug.bug_no || bug.id }}</span>
+                      <span class="text-sm text-gray-700 truncate">{{ bug.title }}</span>
                     </div>
-                    <span class="px-2 py-0.5 rounded text-xs" :class="getBugSeverityClass(bug.severity)">{{ severityLabel(bug.severity) }}</span>
+                    <div class="flex items-center gap-2 flex-shrink-0">
+                      <span class="px-2 py-0.5 rounded text-xs" :class="getBugSeverityClass(bug.severity)">{{ severityLabel(bug.severity) }}</span>
+                      <button
+                        v-if="can('update', 'requirement')"
+                        class="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="取消关联"
+                        @click.stop="unlinkBug(bug)"
+                      >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 </div>
                 <div v-else class="text-center py-8 text-gray-400">
@@ -247,6 +304,7 @@
                   </svg>
                   <p class="text-sm">暂无关联 Bug</p>
                 </div>
+                <p v-if="bugErrorMessage" class="mt-2 text-sm text-red-500">{{ bugErrorMessage }}</p>
               </div>
           </div>
 
@@ -266,15 +324,6 @@
       :projects="meta?.projects || []"
       :edit-data="editData"
       @success="onEditSuccess"
-    />
-
-    <!-- Bug Modal -->
-    <BugModal
-      v-model:visible="showBugModal"
-      :requirement="requirement"
-      :users="meta?.users || []"
-      :iterations="meta?.iterations || []"
-      @success="onBugSuccess"
     />
 
     <!-- Create Task Modal -->
@@ -340,7 +389,7 @@
               <div class="grid grid-cols-2 gap-4">
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-1.5">指派给</label>
-                  <AssigneeMultiSelect v-model="row.assignee_ids" :users="meta?.users || []" />
+                  <AssigneeMultiSelect v-model="row.assignee_ids" :users="taskAssigneeOptions" />
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-1.5">预估工时</label>
@@ -354,7 +403,14 @@
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-1.5">截止时间</label>
-                  <input v-model="row.due_date" type="date" class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-blue-400 transition-all" />
+                  <input
+                    v-model="row.due_date"
+                    type="date"
+                    :min="row.start_date || undefined"
+                    class="w-full px-3 py-2 bg-white border rounded-lg text-sm text-gray-800 focus:outline-none focus:border-blue-400 transition-all"
+                    :class="isDueBeforeStart(row.start_date, row.due_date) ? 'border-red-400' : 'border-gray-200'"
+                  />
+                  <p v-if="isDueBeforeStart(row.start_date, row.due_date)" class="text-xs text-red-500 mt-1">截止时间不能早于开始时间</p>
                 </div>
               </div>
               </div>
@@ -454,6 +510,249 @@
       </Transition>
     </Teleport>
 
+    <!-- Associate Bug Modal -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="showBugPickerModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="showBugPickerModal = false">
+          <div class="bg-white rounded-xl w-[520px] max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
+            <div class="flex items-center justify-between p-5 border-b border-gray-100">
+              <h3 class="text-lg font-bold text-gray-800">关联 Bug</h3>
+              <button class="text-gray-400 hover:text-gray-600" @click="showBugPickerModal = false">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+              </button>
+            </div>
+            <div class="px-5 pt-4">
+              <div class="relative">
+                <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+                <input
+                  v-model="bugSearch"
+                  type="text"
+                  placeholder="搜索 Bug 标题或编号..."
+                  class="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:border-blue-400 focus:bg-white transition-all"
+                />
+              </div>
+            </div>
+            <div class="p-5 overflow-y-auto flex-1 min-h-[240px]">
+              <div v-if="bugsLoading" class="py-10 text-center text-sm text-gray-400">加载中...</div>
+              <div v-else-if="filteredAvailableBugs.length === 0" class="py-10 text-center text-sm text-gray-400">
+                暂无可关联 Bug
+              </div>
+              <div v-else class="space-y-2">
+                <button
+                  v-for="bug in filteredAvailableBugs"
+                  :key="bug.bug_id || bug.id"
+                  type="button"
+                  class="w-full flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-50 text-left transition-colors disabled:opacity-50"
+                  :disabled="bugSubmitting"
+                  @click="associateBug(bug)"
+                >
+                  <div class="min-w-0 flex-1">
+                    <div class="text-sm font-medium text-gray-800 truncate">{{ bug.title }}</div>
+                    <div class="text-xs text-gray-400 mt-0.5">
+                      {{ bug.id }}
+                      <span v-if="bug.requirement?.title"> · 已关联：{{ bug.requirement.title }}</span>
+                    </div>
+                  </div>
+                  <span class="px-2 py-0.5 rounded text-xs flex-shrink-0" :class="getBugSeverityClass(bug.severity)">{{ severityLabel(bug.severity) }}</span>
+                </button>
+              </div>
+              <p v-if="bugPickerError" class="mt-3 text-sm text-red-500">{{ bugPickerError }}</p>
+            </div>
+            <div class="flex items-center justify-between p-5 border-t border-gray-100">
+              <button
+                v-if="can('create', 'bug')"
+                class="text-sm text-blue-600 hover:underline"
+                @click="goCreateBug"
+              >
+                去新建 Bug
+              </button>
+              <span v-else></span>
+              <button class="px-4 py-2 text-gray-600 hover:text-gray-800 text-sm font-medium transition-colors" @click="showBugPickerModal = false">关闭</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Edit Task Modal -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="showEditTaskModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="closeEditTask">
+          <div class="bg-white rounded-xl w-[560px] max-h-[90vh] shadow-2xl flex flex-col">
+            <div class="flex items-center justify-between p-5 border-b border-gray-100">
+              <h3 class="text-lg font-bold text-gray-800">编辑任务</h3>
+              <button class="text-gray-400 hover:text-gray-600" @click="closeEditTask">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+              </button>
+            </div>
+            <div class="p-5 space-y-3 overflow-y-auto">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">任务标题 <span class="text-red-500">*</span></label>
+                <input v-model="editTask.title" type="text" class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-blue-400" />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">任务描述</label>
+                <textarea v-model="editTask.description" rows="3" class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-blue-400 resize-none"></textarea>
+              </div>
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1.5">状态</label>
+                  <select v-model="editTask.status" class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-blue-400">
+                    <option value="todo">待办</option>
+                    <option value="in_progress">进行中</option>
+                    <option value="review">评审中</option>
+                    <option value="done">已完成</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1.5">优先级</label>
+                  <select v-model="editTask.priority" class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-blue-400">
+                    <option value="urgent">紧急</option>
+                    <option value="high">高</option>
+                    <option value="medium">中</option>
+                    <option value="low">低</option>
+                  </select>
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1.5">任务类型</label>
+                  <select v-model="editTask.type" class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-blue-400">
+                    <option value="development">开发</option>
+                    <option value="design">设计</option>
+                    <option value="test">测试</option>
+                    <option value="research">调研</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1.5">指派给</label>
+                  <AssigneeMultiSelect v-model="editTask.assignee_ids" :users="taskAssigneeOptions" />
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1.5">预估工时</label>
+                  <input v-model="editTask.estimated_hours" type="number" step="0.5" class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-blue-400" />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1.5">截止时间</label>
+                  <input
+                    v-model="editTask.due_date"
+                    type="date"
+                    :min="editTask.start_date || undefined"
+                    class="w-full px-3 py-2 bg-white border rounded-lg text-sm text-gray-800 focus:outline-none focus:border-blue-400"
+                    :class="isDueBeforeStart(editTask.start_date, editTask.due_date) ? 'border-red-400' : 'border-gray-200'"
+                  />
+                  <p v-if="isDueBeforeStart(editTask.start_date, editTask.due_date)" class="text-xs text-red-500 mt-1">截止时间不能早于开始时间</p>
+                </div>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1.5">开始时间</label>
+                <input v-model="editTask.start_date" type="date" class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:border-blue-400" />
+              </div>
+              <p v-if="editTaskError" class="text-sm text-red-500">{{ editTaskError }}</p>
+            </div>
+            <div class="flex items-center justify-end gap-3 p-5 border-t border-gray-100">
+              <button class="px-4 py-2 text-gray-600 hover:text-gray-800 text-sm font-medium" @click="closeEditTask">取消</button>
+              <button
+                class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-50"
+                :disabled="!editTask.title.trim() || taskSubmitting"
+                @click="saveEditTask"
+              >
+                {{ taskSubmitting ? '保存中...' : '保存' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Delete Task Modal -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="showDeleteTaskModal && deleteTaskTarget" class="fixed inset-0 z-50 flex items-center justify-center">
+          <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="closeDeleteTask"></div>
+          <div class="relative w-96 bg-white rounded-2xl shadow-2xl p-6">
+            <h3 class="text-base font-semibold text-gray-800">确认删除</h3>
+            <p class="text-sm text-gray-500 mt-2">确定要删除任务「{{ deleteTaskTarget.title }}」吗？此操作不可恢复。</p>
+            <p v-if="deleteTaskError" class="text-sm text-red-500 mt-3">{{ deleteTaskError }}</p>
+            <div class="flex justify-end gap-3 mt-6">
+              <button class="px-4 py-2 text-gray-600 hover:text-gray-800 text-sm font-medium" @click="closeDeleteTask">取消</button>
+              <button
+                class="px-5 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium disabled:opacity-50"
+                :disabled="taskSubmitting"
+                @click="confirmDeleteTask"
+              >
+                {{ taskSubmitting ? '删除中...' : '确认删除' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Incomplete Tasks Block Modal -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="showCompleteBlockedModal" class="fixed inset-0 z-50 flex items-center justify-center">
+          <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="showCompleteBlockedModal = false"></div>
+          <div class="relative w-[420px] bg-white rounded-2xl shadow-2xl p-6">
+            <h3 class="text-base font-semibold text-gray-800">无法完成需求</h3>
+            <p class="text-sm text-gray-500 mt-2">{{ completeBlockedMessage }}</p>
+            <ul v-if="incompleteAssociatedTasks.length" class="mt-3 max-h-40 overflow-y-auto space-y-1.5">
+              <li v-for="task in incompleteAssociatedTasks" :key="task.id">
+                <button
+                  type="button"
+                  class="w-full text-left text-sm text-gray-600 flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 hover:text-blue-600 transition-colors"
+                  @click="viewIncompleteTask(task)"
+                >
+                  <span class="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0"></span>
+                  <span class="truncate flex-1">{{ task.title }}</span>
+                  <span class="text-xs text-gray-400 flex-shrink-0">{{ taskStatusLabel(task.status) }}</span>
+                </button>
+              </li>
+            </ul>
+            <div class="flex justify-end gap-3 mt-6">
+              <button class="px-4 py-2 text-gray-600 hover:text-gray-800 text-sm font-medium" @click="showCompleteBlockedModal = false">我知道了</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Delete Requirement Modal -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="showDeleteReqModal" class="fixed inset-0 z-50 flex items-center justify-center">
+          <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="showDeleteReqModal = false"></div>
+          <div class="relative w-96 bg-white rounded-2xl shadow-2xl p-6">
+            <h3 class="text-base font-semibold text-gray-800">{{ deleteReqBlocked ? '无法删除' : '确认删除' }}</h3>
+            <p class="text-sm text-gray-500 mt-2">{{ deleteReqMessage }}</p>
+            <p v-if="deleteReqError" class="text-sm text-red-500 mt-3">{{ deleteReqError }}</p>
+            <div class="flex justify-end gap-3 mt-6">
+              <button class="px-4 py-2 text-gray-600 hover:text-gray-800 text-sm font-medium" @click="showDeleteReqModal = false">
+                {{ deleteReqBlocked ? '我知道了' : '取消' }}
+              </button>
+              <button
+                v-if="!deleteReqBlocked"
+                class="px-5 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium disabled:opacity-50"
+                :disabled="deleteReqSubmitting"
+                @click="confirmDeleteRequirement"
+              >
+                {{ deleteReqSubmitting ? '删除中...' : '确认删除' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
     <ImagePreviewModal
       v-model="previewVisible"
       :src="previewImages[previewIndex]"
@@ -468,15 +767,15 @@
 
 <script setup lang="ts">
 import type { MetaResponse, Requirement, RequirementDetail, RequirementHistoryItem, RequirementStatus, Priority, Severity } from '~/types'
-import { isMeaningfulTaskDraft, normalizeDraftAssigneeIds, parseTaskDrafts, serializeTaskDrafts, taskDraftStorageKey } from '~/utils/task-draft'
-import { taskAssigneeList, taskAssigneeNames } from '~/utils/task-assignees'
+import { estimatedHoursFromDates, isDueBeforeStart, isMeaningfulTaskDraft, normalizeDraftAssigneeIds, parseTaskDrafts, serializeTaskDrafts, taskDraftStorageKey } from '~/utils/task-draft'
+import { assignableUsers, taskAssigneeList, taskAssigneeNames } from '~/utils/task-assignees'
 import {
   PRIORITY_LABELS,
   STATUS_LABELS, STATUS_CLASSES, STATUS_DOT_COLORS,
   SEVERITY_LABELS, SEVERITY_CLASSES
 } from '~/types'
 
-const { can } = useAuth()
+const { can, canMaybeOwn } = useAuth()
 
 const route = useRoute()
 const router = useRouter()
@@ -485,6 +784,7 @@ const requirementId = route.params.id as string
 const { data: meta } = await useFetch<MetaResponse>('/api/meta', {
   default: () => ({ totalCount: 0, users: [], projects: [], iterations: [], modules: [], statusCounts: {} })
 })
+const taskAssigneeOptions = computed(() => assignableUsers(meta.value?.users))
 const { data: requirement, refresh } = await useFetch<RequirementDetail>(`/api/requirements/${requirementId}`, {
   default: () => null as any
 })
@@ -531,7 +831,6 @@ const { data: tasks, refresh: refreshTasks } = await useFetch(`/api/tasks`, {
   default: () => []
 })
 
-const showBugModal = ref(false)
 const editModalVisible = ref(false)
 const editData = ref<Requirement | null>(null)
 
@@ -616,6 +915,153 @@ function goCreatePrototype() {
   navigateTo(reqId ? `/prototype/new?requirementId=${reqId}` : '/prototype/new')
 }
 
+const showBugPickerModal = ref(false)
+const bugsLoading = ref(false)
+const bugSubmitting = ref(false)
+const bugSearch = ref('')
+const bugErrorMessage = ref('')
+const bugPickerError = ref('')
+const availableBugs = ref<any[]>([])
+const showDeleteReqModal = ref(false)
+const deleteReqSubmitting = ref(false)
+const deleteReqError = ref('')
+const showCompleteBlockedModal = ref(false)
+const completeReqSubmitting = ref(false)
+
+const associatedTasks = computed(() => {
+  if (Array.isArray(requirement.value?.tasks) && requirement.value.tasks.length) return requirement.value.tasks
+  return Array.isArray(tasks.value) ? tasks.value : []
+})
+const incompleteAssociatedTasks = computed(() =>
+  associatedTasks.value.filter((t: any) => t.status && t.status !== 'done' && t.status !== 'cancelled')
+)
+const completeBlockedMessage = computed(() => {
+  const count = incompleteAssociatedTasks.value.length
+  if (!count) return '该需求还有关联任务未完成，无法直接完成需求。'
+  return `该需求还有 ${count} 个关联任务未完成，请先完成全部任务后再将需求标记为已完成。`
+})
+
+const linkedBugIds = computed(() => new Set((requirement.value?.bugs || []).map((b: any) => String(b.bug_id || b.id))))
+
+const filteredAvailableBugs = computed(() => {
+  const kw = bugSearch.value.trim().toLowerCase()
+  return availableBugs.value.filter((bug) => {
+    if (linkedBugIds.value.has(String(bug.bug_id)) || linkedBugIds.value.has(String(bug.id))) return false
+    if (!kw) return true
+    return `${bug.title || ''} ${bug.id || ''}`.toLowerCase().includes(kw)
+  })
+})
+
+async function loadAvailableBugs() {
+  bugsLoading.value = true
+  bugPickerError.value = ''
+  try {
+    const list = await $fetch<any[]>('/api/bugs', {
+      query: { projectId: requirement.value?.project?.id || undefined }
+    })
+    availableBugs.value = list || []
+  } catch (e: any) {
+    availableBugs.value = []
+    bugPickerError.value = e.data?.message || e.statusMessage || '加载 Bug 列表失败'
+  } finally {
+    bugsLoading.value = false
+  }
+}
+
+async function openBugPicker() {
+  bugSearch.value = ''
+  bugPickerError.value = ''
+  showBugPickerModal.value = true
+  await loadAvailableBugs()
+}
+
+async function associateBug(bug: { id: string; bug_id?: number }) {
+  bugSubmitting.value = true
+  bugPickerError.value = ''
+  bugErrorMessage.value = ''
+  try {
+    await $fetch(`/api/requirements/${requirementId}/bugs`, {
+      method: 'POST',
+      body: { bug_id: bug.bug_id || bug.id }
+    })
+    showBugPickerModal.value = false
+    await Promise.all([refresh(), refreshHistory()])
+  } catch (e: any) {
+    bugPickerError.value = e.data?.message || e.statusMessage || '关联 Bug 失败'
+  } finally {
+    bugSubmitting.value = false
+  }
+}
+
+async function unlinkBug(bug: { id: string; bug_id?: number }) {
+  bugErrorMessage.value = ''
+  try {
+    await $fetch(`/api/requirements/${requirementId}/bugs/${bug.bug_id || bug.id}`, { method: 'DELETE' })
+    await Promise.all([refresh(), refreshHistory()])
+  } catch (e: any) {
+    bugErrorMessage.value = e.data?.message || e.statusMessage || '取消关联失败'
+  }
+}
+
+function goCreateBug() {
+  showBugPickerModal.value = false
+  navigateTo({ path: '/bugs/new', query: { from: `/requirements/${requirementId}` } })
+}
+
+async function completeRequirement() {
+  if (!requirement.value || completeReqSubmitting.value) return
+  if (incompleteAssociatedTasks.value.length) {
+    showCompleteBlockedModal.value = true
+    return
+  }
+  completeReqSubmitting.value = true
+  try {
+    await $fetch(`/api/requirements/${requirementId}`, {
+      method: 'PUT',
+      body: { status: 'completed' }
+    })
+    await Promise.all([refresh(), refreshHistory()])
+  } catch (e: any) {
+    const code = e.statusCode || e.status
+    if (code === 409) {
+      showCompleteBlockedModal.value = true
+    } else {
+      alert(e.data?.message || e.statusMessage || '完成需求失败')
+    }
+  } finally {
+    completeReqSubmitting.value = false
+  }
+}
+
+const deleteReqBlocked = computed(() => (requirement.value?.task_count || requirement.value?.tasks?.length || 0) > 0)
+const deleteReqMessage = computed(() => {
+  if (!requirement.value) return ''
+  if (deleteReqBlocked.value) {
+    return `需求「${requirement.value.title}」下还有关联任务，请先删除关联任务后再删除需求。`
+  }
+  return `确定要删除需求「${requirement.value.title}」吗？此操作不可恢复。`
+})
+
+function openDeleteRequirement() {
+  deleteReqError.value = ''
+  showDeleteReqModal.value = true
+}
+
+async function confirmDeleteRequirement() {
+  if (!requirement.value || deleteReqBlocked.value || deleteReqSubmitting.value) return
+  deleteReqSubmitting.value = true
+  deleteReqError.value = ''
+  try {
+    await $fetch(`/api/requirements/${requirementId}`, { method: 'DELETE' })
+    showDeleteReqModal.value = false
+    router.push('/requirements')
+  } catch (e: any) {
+    deleteReqError.value = e.data?.message || e.statusMessage || '删除失败'
+  } finally {
+    deleteReqSubmitting.value = false
+  }
+}
+
 // 新建任务
 const showTaskModal = ref(false)
 const taskSubmitting = ref(false)
@@ -624,6 +1070,14 @@ const expandedTaskId = ref<string | number | null>(null)
 
 function toggleExpandedTask(id: string | number) {
   expandedTaskId.value = expandedTaskId.value === id ? null : id
+}
+
+function viewIncompleteTask(task: { id: string | number }) {
+  showCompleteBlockedModal.value = false
+  expandedTaskId.value = task.id
+  nextTick(() => {
+    document.getElementById(`req-task-${task.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  })
 }
 
 interface TaskDraft {
@@ -698,6 +1152,15 @@ function removeTaskRow(idx: number) {
 
 restoreTaskDrafts()
 watch(taskDrafts, persistTaskDrafts, { deep: true })
+watch(
+  () => taskDrafts.value.map(row => `${row.key}:${row.start_date}:${row.due_date}`).join('|'),
+  () => {
+    for (const row of taskDrafts.value) {
+      const hours = estimatedHoursFromDates(row.start_date, row.due_date)
+      if (hours != null) row.estimated_hours = hours
+    }
+  }
+)
 watch(showTaskModal, (visible) => {
   if (visible) taskErrorMessage.value = ''
 })
@@ -706,6 +1169,10 @@ async function createTask() {
   const items = taskDrafts.value.filter(row => row.title.trim())
   if (!items.length) {
     taskErrorMessage.value = '请至少填写一个任务标题'
+    return
+  }
+  if (items.some(row => isDueBeforeStart(row.start_date, row.due_date))) {
+    taskErrorMessage.value = '截止时间不能早于开始时间'
     return
   }
 
@@ -735,6 +1202,112 @@ async function createTask() {
     await Promise.all([refresh(), refreshTasks(), refreshHistory()])
   } catch (e: any) {
     taskErrorMessage.value = e.data?.message || e.statusMessage || '创建任务失败'
+  } finally {
+    taskSubmitting.value = false
+  }
+}
+
+const showEditTaskModal = ref(false)
+const showDeleteTaskModal = ref(false)
+const deleteTaskTarget = ref<any>(null)
+const editTaskError = ref('')
+const deleteTaskError = ref('')
+const editTask = reactive({
+  id: '' as string | number,
+  title: '',
+  description: '',
+  status: 'todo',
+  priority: 'medium',
+  type: 'development',
+  assignee_ids: [] as number[],
+  estimated_hours: '' as string | number,
+  start_date: '',
+  due_date: ''
+})
+
+function openEditTask(task: any) {
+  editTask.id = task.id
+  editTask.title = task.title || ''
+  editTask.description = task.description || ''
+  editTask.status = task.status || 'todo'
+  editTask.priority = task.priority || 'medium'
+  editTask.type = task.type || 'development'
+  editTask.assignee_ids = taskAssigneeList(task).map(u => Number(u.id))
+  editTask.estimated_hours = task.estimated_hours ?? ''
+  editTask.start_date = task.start_date ? String(task.start_date).split('T')[0] : ''
+  editTask.due_date = task.due_date ? String(task.due_date).split('T')[0] : ''
+  editTaskError.value = ''
+  showEditTaskModal.value = true
+}
+
+watch(
+  () => [editTask.start_date, editTask.due_date],
+  () => {
+    if (!showEditTaskModal.value) return
+    const hours = estimatedHoursFromDates(editTask.start_date, editTask.due_date)
+    if (hours != null) editTask.estimated_hours = hours
+  }
+)
+
+function closeEditTask() {
+  showEditTaskModal.value = false
+  editTaskError.value = ''
+}
+
+async function saveEditTask() {
+  if (!editTask.title.trim() || taskSubmitting.value) return
+  if (isDueBeforeStart(editTask.start_date, editTask.due_date)) {
+    editTaskError.value = '截止时间不能早于开始时间'
+    return
+  }
+  taskSubmitting.value = true
+  editTaskError.value = ''
+  try {
+    await $fetch(`/api/tasks/${editTask.id}`, {
+      method: 'PUT',
+      body: {
+        title: editTask.title.trim(),
+        description: editTask.description,
+        status: editTask.status,
+        priority: editTask.priority,
+        type: editTask.type,
+        assignee_ids: editTask.assignee_ids || [],
+        estimated_hours: editTask.estimated_hours === '' ? null : Number(editTask.estimated_hours),
+        start_date: editTask.start_date || null,
+        due_date: editTask.due_date || null
+      }
+    })
+    closeEditTask()
+    await Promise.all([refresh(), refreshTasks(), refreshHistory()])
+  } catch (e: any) {
+    editTaskError.value = e.data?.message || e.statusMessage || '保存失败'
+  } finally {
+    taskSubmitting.value = false
+  }
+}
+
+function openDeleteTask(task: any) {
+  deleteTaskTarget.value = task
+  deleteTaskError.value = ''
+  showDeleteTaskModal.value = true
+}
+
+function closeDeleteTask() {
+  showDeleteTaskModal.value = false
+  deleteTaskTarget.value = null
+  deleteTaskError.value = ''
+}
+
+async function confirmDeleteTask() {
+  if (!deleteTaskTarget.value || taskSubmitting.value) return
+  taskSubmitting.value = true
+  deleteTaskError.value = ''
+  try {
+    await $fetch(`/api/tasks/${deleteTaskTarget.value.id}`, { method: 'DELETE' })
+    closeDeleteTask()
+    await Promise.all([refresh(), refreshTasks(), refreshHistory()])
+  } catch (e: any) {
+    deleteTaskError.value = e.data?.message || e.statusMessage || '删除失败'
   } finally {
     taskSubmitting.value = false
   }
@@ -818,11 +1391,6 @@ function onEditSuccess() {
   editData.value = null
   refresh()
   refreshHistory()
-}
-
-function onBugSuccess() {
-  showBugModal.value = false
-  refresh()
 }
 </script>
 

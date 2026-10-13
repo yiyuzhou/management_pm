@@ -47,3 +47,15 @@ export function normalizeDate(value: unknown): string | null {
 
   return null;
 }
+
+export function assertTaskDateRange(start: unknown, due: unknown) {
+  const from = normalizeDate(start)
+  const to = normalizeDate(due)
+  if (!from || !to) return
+  if (to < from) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: '截止时间不能早于开始时间'
+    })
+  }
+}

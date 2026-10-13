@@ -48,6 +48,27 @@ export function serializeTaskDrafts(rows: TaskDraftRow[]) {
   })))
 }
 
+function parseDay(value?: string | null): Date | null {
+  if (!value) return null
+  const date = new Date(`${value}T00:00:00`)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+export function isDueBeforeStart(start?: string | null, due?: string | null): boolean {
+  const from = parseDay(start)
+  const to = parseDay(due)
+  return !!(from && to && to < from)
+}
+
+/** Inclusive calendar days × 8 hours. Returns null when dates are missing or invalid. */
+export function estimatedHoursFromDates(start?: string | null, due?: string | null): number | null {
+  const from = parseDay(start)
+  const to = parseDay(due)
+  if (!from || !to || to < from) return null
+  const days = Math.round((to.getTime() - from.getTime()) / 86400000) + 1
+  return days * 8
+}
+
 export function parseTaskDrafts(raw: string | null): TaskDraftRow[] {
   if (!raw) return []
   try {

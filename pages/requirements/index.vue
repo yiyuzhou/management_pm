@@ -145,7 +145,7 @@ const filters = reactive({
 const currentPage = ref(1)
 
 // Fetch meta data
-const { data: meta } = await useFetch<MetaResponse>('/api/meta', {
+const { data: meta, refresh: refreshMeta } = await useFetch<MetaResponse>('/api/meta', {
   query: computed(() => ({
     projectId: selectedProjectId.value || undefined
   })),
@@ -232,6 +232,7 @@ watch(
       if (isSwitch) userPickedIteration.value = false
     }
     if (userPickedIteration.value) return
+    if (selectedIterationId.value && iterations.some(it => String(it.id) === String(selectedIterationId.value))) return
 
     const queryId = route.query.iterationId ? String(route.query.iterationId) : ''
     applyingAutoIteration = true
@@ -300,8 +301,7 @@ function onEdit(item: Requirement) {
 async function refreshListAndMeta() {
   await refresh()
   if (viewMode.value === 'kanban') await refreshKanban()
-  const newMeta = await $fetch<MetaResponse>('/api/meta')
-  meta.value = newMeta
+  await refreshMeta()
 }
 
 async function onChangeStatus(item: Requirement, status: RequirementStatus) {
@@ -344,10 +344,7 @@ async function confirmDelete() {
     await $fetch(`/api/requirements/${deleteTarget.value.id}`, { method: 'DELETE' })
     deleteModalVisible.value = false
     deleteTarget.value = null
-    await refresh()
-    if (viewMode.value === 'kanban') await refreshKanban()
-    const newMeta = await $fetch<MetaResponse>('/api/meta')
-    meta.value = newMeta
+    await refreshListAndMeta()
   } catch (e: any) {
     const message = e.data?.message || e.statusMessage || '删除失败'
     alert(message)
@@ -356,11 +353,7 @@ async function confirmDelete() {
 
 async function onModalSuccess() {
   editData.value = null
-  await refresh()
-  if (viewMode.value === 'kanban') await refreshKanban()
-  // Refresh meta to update counts
-  const newMeta = await $fetch<MetaResponse>('/api/meta')
-  meta.value = newMeta
+  await refreshListAndMeta()
 }
 </script>
 

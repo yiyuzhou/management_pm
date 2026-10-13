@@ -26,3 +26,23 @@ export async function completeAssociatedTasks(reqIds: number[]) {
     reqIds
   )
 }
+
+export async function listIncompleteAssociatedTasks(reqId: number) {
+  return await query(
+    `SELECT id, task_no, title, status
+       FROM tasks
+      WHERE requirement_id = ?
+        AND status NOT IN ('done', 'cancelled')
+      ORDER BY id ASC`,
+    [reqId]
+  ) as { id: number; task_no: string; title: string; status: string }[]
+}
+
+export async function assertRequirementTasksCompleted(reqId: number) {
+  const incomplete = await listIncompleteAssociatedTasks(reqId)
+  if (!incomplete.length) return
+  throw createError({
+    statusCode: 409,
+    statusMessage: `还有 ${incomplete.length} 个关联任务未完成，无法将需求标记为已完成`
+  })
+}

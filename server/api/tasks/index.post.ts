@@ -1,6 +1,6 @@
 import { query } from '~/server/utils/mysql';
 import { authorize } from '~/server/utils/permissions';
-import { normalizeDate } from '~/server/utils/date';
+import { assertTaskDateRange, normalizeDate } from '~/server/utils/date';
 import { attachAssigneesToTasks, normalizeAssigneeIds, replaceTaskAssignees } from '~/server/utils/taskAssignees';
 import { insertRequirementHistory } from '~/server/utils/requirementHistory';
 
@@ -46,6 +46,7 @@ async function insertTask(currentUserId: number, item: any) {
   }
 
   const assigneeIds = normalizeAssigneeIds(item);
+  assertTaskDateRange(item.start_date, item.due_date);
 
   const result = await query(
     `INSERT INTO tasks (task_no, title, description, status, priority, type,

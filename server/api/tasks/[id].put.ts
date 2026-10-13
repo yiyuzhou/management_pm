@@ -1,6 +1,6 @@
 import { query } from '~/server/utils/mysql';
 import { authorize } from '~/server/utils/permissions';
-import { normalizeDate } from '~/server/utils/date';
+import { assertTaskDateRange, normalizeDate } from '~/server/utils/date';
 import { attachAssigneesToTasks, normalizeAssigneeIds, replaceTaskAssignees } from '~/server/utils/taskAssignees';
 
 export default defineEventHandler(async (event) => {
@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
 
     // 查找任务（支持 task_no 或 id）
     const existing = await query(
-      'SELECT id FROM tasks WHERE task_no = ? OR id = ?',
+      'SELECT id, start_date, due_date FROM tasks WHERE task_no = ? OR id = ?',
       [id, id]
     ) as any[];
 
@@ -44,6 +44,11 @@ export default defineEventHandler(async (event) => {
     if (project_id !== undefined) { fields.push('project_id = ?'); values.push(project_id || null); }
     if (requirement_id !== undefined) { fields.push('requirement_id = ?'); values.push(requirement_id || null); }
     if (iteration_id !== undefined) { fields.push('iteration_id = ?'); values.push(iteration_id || null); }
+    assertTaskDateRange(
+      start_date !== undefined ? start_date : existing[0].start_date,
+      due_date !== undefined ? due_date : existing[0].due_date
+    )
+
     const hasAssignees = body.assignee_ids !== undefined || assignee_id !== undefined
     const assigneeIds = hasAssignees ? normalizeAssigneeIds(body) : null
     if (assigneeIds) { fields.push('assignee_id = ?'); values.push(assigneeIds[0] || null); }

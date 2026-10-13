@@ -1,6 +1,6 @@
 import { query } from '~/server/utils/mysql'
 import { authorize } from '~/server/utils/permissions'
-import { completeAssociatedTasks, isRequirementStatus } from '~/server/utils/requirementStatus'
+import { assertRequirementTasksCompleted, isRequirementStatus } from '~/server/utils/requirementStatus'
 import { insertRequirementHistory, REQUIREMENT_HISTORY_STATUS_LABELS } from '~/server/utils/requirementHistory'
 
 export default defineEventHandler(async (event) => {
@@ -28,6 +28,11 @@ export default defineEventHandler(async (event) => {
     }
 
     const reqIds = rows.map(r => r.id)
+    if (status === 'completed') {
+      for (const row of rows.filter(r => r.status !== 'completed')) {
+        await assertRequirementTasksCompleted(row.id)
+      }
+    }
     const idPlaceholders = reqIds.map(() => '?').join(',')
     await query(
       `UPDATE requirements SET status = ? WHERE id IN (${idPlaceholders})`,
@@ -43,11 +48,6 @@ export default defineEventHandler(async (event) => {
         REQUIREMENT_HISTORY_STATUS_LABELS[status] || status,
         currentUser.id
       )
-    }
-
-    if (status === 'completed') {
-      const newlyCompleted = rows.filter(r => r.status !== 'completed').map(r => r.id)
-      await completeAssociatedTasks(newlyCompleted)
     }
 
     return { success: true, updated: reqIds.length, status }
