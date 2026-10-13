@@ -1,0 +1,19 @@
+# Dependencies
+node_modules
+
+# Nuxt build
+.nuxt
+.output
+
+# Environment variables
+.env
+
+# Logs
+*.log
+npm-debug.log*
+
+# Misc
+.DS_Store
+
+# Local tooling
+.catpaw
